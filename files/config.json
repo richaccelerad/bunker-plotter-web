@@ -1,0 +1,11 @@
+{
+    "csv_file": "bunker.csv",
+    "figure_size": [12, 8],
+    "plots": [
+        {"left": ["CCPS"], "right": ["Ekly (kV)", "Ikly (A)"]},
+        {"left": ["GunVfil (v)"], "right": ["Gun Ifil (A)"]},
+        {"left": ["GunHV (kV)"], "right": ["Icath (mA)", "-BeamCT ma"]},
+        {"left": ["duty_gun"], "right": ["duty_kly"]},
+        {"left": ["Guide Iip (æA)"], "right": ["Sacn Iip (æA)"]}
+    ]
+}
