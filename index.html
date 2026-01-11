@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bunker CSV Plotter</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 1400px;
+            width: 100%;
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+        
+        .content {
+            padding: 40px;
+        }
+        
+        .upload-section {
+            background: #f7f9fc;
+            border: 2px dashed #cbd5e0;
+            border-radius: 12px;
+            padding: 40px;
+            text-align: center;
+            transition: all 0.3s ease;
+            margin-bottom: 30px;
+        }
+        
+        .upload-section:hover {
+            border-color: #667eea;
+            background: #f0f4ff;
+        }
+        
+        .upload-section.dragover {
+            border-color: #667eea;
+            background: #e6eeff;
+            transform: scale(1.02);
+        }
+        
+        .file-input-wrapper {
+            position: relative;
+            display: inline-block;
+        }
+        
+        input[type="file"] {
+            display: none;
+        }
+        
+        .file-input-label {
+            display: inline-block;
+            padding: 15px 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1.1em;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .file-input-label:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+        
+        .file-name {
+            margin-top: 15px;
+            font-size: 1em;
+            color: #4a5568;
+        }
+        
+        .plot-container {
+            display: none;
+            margin-top: 30px;
+        }
+        
+        .plot-info {
+            background: #e6f7ff;
+            border-left: 4px solid #1890ff;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+        
+        .error {
+            background: #fff2f0;
+            border-left: 4px solid #ff4d4f;
+            color: #cf1322;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+            display: none;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 40px;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .instructions {
+            background: #fffbeb;
+            border-left: 4px solid #fbbf24;
+            padding: 20px;
+            margin-top: 30px;
+            border-radius: 4px;
+        }
+        
+        .instructions h3 {
+            margin-bottom: 10px;
+            color: #92400e;
+        }
+        
+        .instructions ul {
+            margin-left: 20px;
+            color: #78350f;
+        }
+        
+        .instructions li {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 Bunker CSV Plotter</h1>
+            <p>Upload your CSV file to generate interactive plots</p>
+        </div>
+        
+        <div class="content">
+            <div class="upload-section" id="uploadSection">
+                <div class="file-input-wrapper">
+                    <input type="file" id="csvFile" accept=".csv" />
+                    <label for="csvFile" class="file-input-label">
+                        📁 Choose CSV File
+                    </label>
+                </div>
+                <div class="file-name" id="fileName"></div>
+            </div>
+            
+            <div class="error" id="errorMessage"></div>
+            
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Processing your CSV file...</p>
+            </div>
+            
+            <div class="plot-container" id="plotContainer">
+                <div class="plot-info" id="plotInfo"></div>
+                <div id="plotContent"></div>
+            </div>
+            
+            <div class="instructions">
+                <h3>📝 Instructions</h3>
+                <ul>
+                    <li>Upload a CSV file with Date and Time columns</li>
+                    <li>The plotter will automatically generate interactive plots based on the config.json file</li>
+                    <li>Hover over the plots to see values</li>
+                    <li>Click and drag to zoom into specific regions</li>
+                    <li>Double-click to reset the view</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const fileInput = document.getElementById('csvFile');
+        const fileName = document.getElementById('fileName');
+        const uploadSection = document.getElementById('uploadSection');
+        const loading = document.getElementById('loading');
+        const errorMessage = document.getElementById('errorMessage');
+        const plotContainer = document.getElementById('plotContainer');
+        const plotInfo = document.getElementById('plotInfo');
+        const plotContent = document.getElementById('plotContent');
+        
+        // File selection handler
+        fileInput.addEventListener('change', function(e) {
+            if (this.files.length > 0) {
+                const file = this.files[0];
+                fileName.textContent = `Selected: ${file.name}`;
+                uploadFile(file);
+            }
+        });
+        
+        // Drag and drop handlers
+        uploadSection.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            uploadSection.classList.add('dragover');
+        });
+        
+        uploadSection.addEventListener('dragleave', function(e) {
+            e.preventDefault();
+            uploadSection.classList.remove('dragover');
+        });
+        
+        uploadSection.addEventListener('drop', function(e) {
+            e.preventDefault();
+            uploadSection.classList.remove('dragover');
+            
+            const file = e.dataTransfer.files[0];
+            if (file && file.name.endsWith('.csv')) {
+                fileInput.files = e.dataTransfer.files;
+                fileName.textContent = `Selected: ${file.name}`;
+                uploadFile(file);
+            } else {
+                showError('Please drop a CSV file');
+            }
+        });
+        
+        // Upload file function
+        function uploadFile(file) {
+            // Hide previous results and errors
+            errorMessage.style.display = 'none';
+            plotContainer.style.display = 'none';
+            loading.style.display = 'block';
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                loading.style.display = 'none';
+                
+                if (data.error) {
+                    showError(data.error);
+                } else {
+                    showPlot(data);
+                }
+            })
+            .catch(error => {
+                loading.style.display = 'none';
+                showError('An error occurred while processing the file: ' + error);
+            });
+        }
+        
+        // Show error message
+        function showError(message) {
+            errorMessage.textContent = '❌ Error: ' + message;
+            errorMessage.style.display = 'block';
+        }
+        
+        // Show plot
+        function showPlot(data) {
+            plotInfo.innerHTML = `
+                <strong>✅ Success!</strong> Processed ${data.num_rows} rows with ${data.columns.length} columns.
+            `;
+            plotContent.innerHTML = data.plot_html;
+            plotContainer.style.display = 'block';
+        }
+    </script>
+</body>
+</html>
