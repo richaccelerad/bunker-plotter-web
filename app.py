@@ -53,6 +53,27 @@ def load_and_parse_csv(filepath):
         dtype={'Date': str, 'Time': str}
     )
 
+    # Normalize column names (map old names to new names)
+    column_renames = {
+        'Icath (mA)': 'Icath (A)',
+        'BeamCT ma': 'BeamCT (A)',
+        # Handle encoding variations for special characters
+    }
+    # Find and rename columns with encoding issues
+    for col in df.columns:
+        if 'Guide Iip' in col and col != 'Guide Iip (uA)':
+            column_renames[col] = 'Guide Iip (uA)'
+        if 'Sacn Iip' in col or ('Scan Iip' in col and col != 'Scan Iip (uA)'):
+            column_renames[col] = 'Scan Iip (uA)'
+        if 'Gun PW' in col and col != 'Gun PW (us)':
+            column_renames[col] = 'Gun PW (us)'
+        if 'FWHM' in col and col != 'FWHM (us)':
+            column_renames[col] = 'FWHM (us)'
+        if 'Gun Iip' in col and col != 'Gun Iip (uA)':
+            column_renames[col] = 'Gun Iip (uA)'
+
+    df = df.rename(columns=column_renames)
+
     # Combine Date and Time columns into a datetime
     df['datetime'] = pd.to_datetime(
         df['Date'].astype(str) + ' ' + df['Time'].astype(str),
@@ -64,14 +85,11 @@ def load_and_parse_csv(filepath):
     # Drop rows where datetime parsing failed
     df = df[df.index.notna()]
 
-    # Calculated columns - find columns by partial match due to encoding variations
-    gun_pw_cols = [c for c in df.columns if 'Gun PW' in c]
-    fwhm_cols = [c for c in df.columns if 'FWHM' in c]
-    
-    if gun_pw_cols and 'Hz' in df.columns:
-        df['duty_gun'] = df['Hz'] * df[gun_pw_cols[0]]
-    if fwhm_cols and 'Hz' in df.columns:
-        df['duty_kly'] = df['Hz'] * df[fwhm_cols[0]]
+    # Calculated columns (divide by 1e6 to convert us to seconds)
+    if 'Gun PW (us)' in df.columns and 'Hz' in df.columns:
+        df['duty_gun'] = df['Hz'] * df['Gun PW (us)'] / 1e6
+    if 'FWHM (us)' in df.columns and 'Hz' in df.columns:
+        df['duty_kly'] = df['Hz'] * df['FWHM (us)'] / 1e6
 
     return df
 
@@ -85,6 +103,36 @@ def parse_column(col_spec):
         col_name = col_spec[1:]
         return col_name, True, f"-{col_name}"
     return col_spec, False, col_spec
+
+
+def find_on_periods(df):
+    """Find time periods where the system is 'on' (Ikly > 20 and Icath > 0.1)."""
+    if 'Ikly (A)' not in df.columns or 'Icath (A)' not in df.columns:
+        return []
+
+    # Create boolean mask for "on" condition
+    on_mask = (df['Ikly (A)'] > 20) & (df['Icath (A)'] > 0.1)
+
+    # Find transitions (start and end of "on" periods)
+    periods = []
+    in_on_period = False
+    start_time = None
+
+    for i, (time, is_on) in enumerate(zip(df.index, on_mask)):
+        if is_on and not in_on_period:
+            # Start of an "on" period
+            start_time = time
+            in_on_period = True
+        elif not is_on and in_on_period:
+            # End of an "on" period
+            periods.append((start_time, df.index[i-1]))
+            in_on_period = False
+
+    # Handle case where data ends while still "on"
+    if in_on_period:
+        periods.append((start_time, df.index[-1]))
+
+    return periods
 
 
 def create_plotly_figure(df, plot_config):
@@ -106,6 +154,24 @@ def create_plotly_figure(df, plot_config):
         shared_xaxes=True,
         vertical_spacing=0.08,
     )
+
+    # Find "on" periods and add background shading using paper coordinates
+    on_periods = find_on_periods(df)
+    shapes = []
+    for start, end in on_periods:
+        # Single shape spanning entire plot height
+        shapes.append(dict(
+            type="rect",
+            x0=start, x1=end,
+            y0=0, y1=1,
+            xref='x',
+            yref='paper',
+            fillcolor="gray",
+            opacity=0.4,
+            layer="below",
+            line_width=0,
+        ))
+    fig.update_layout(shapes=shapes)
     
     # Color palette
     colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', 
