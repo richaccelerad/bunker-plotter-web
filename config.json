@@ -5,7 +5,7 @@
         {"left": ["CCPS"], "right": ["Ekly (kV)", "Ikly (A)"]},
         {"left": ["GunVfil (v)"], "right": ["Gun Ifil (A)"]},
         {"left": ["GunHV (kV)"], "right": ["Icath (A)", "-BeamCT (A)"]},
-        {"left": ["duty_gun"], "right": ["duty_kly"]},
+        {"left": ["Hz"], "right": ["duty_kly", "duty_gun"]},
         {"left": ["Guide Iip (uA)"], "right": ["Scan Iip (uA)"]}
     ]
 }

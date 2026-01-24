@@ -152,7 +152,7 @@ def create_plotly_figure(df, plot_config):
         cols=1,
         specs=specs,
         shared_xaxes=True,
-        vertical_spacing=0.08,
+        vertical_spacing=0.02,
     )
 
     # Find "on" periods and add background shading using paper coordinates
