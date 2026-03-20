@@ -43,13 +43,16 @@ def load_and_parse_csv(filepath):
     # First, read header to get column count
     with open(filepath, 'r', encoding='latin-1') as f:
         header_line = f.readline()
-    num_cols = len(header_line.split(','))
+    header_cols = [c.strip() for c in header_line.rstrip('\n').split(',') if c.strip()]
+    num_cols = len(header_cols)
 
-    # Read only the expected number of columns (ignores trailing comments)
+    # Read only the expected number of columns (ignores trailing commas/comments)
     df = pd.read_csv(
         filepath,
         encoding='latin-1',
         usecols=range(num_cols),
+        names=header_cols,
+        skiprows=1,
         dtype={'Date': str, 'Time': str}
     )
 
@@ -347,6 +350,11 @@ def create_plotly_figure(df, plot_config):
     )
 
     return fig, matched_cols, missing_cols
+
+
+@app.errorhandler(413)
+def too_large(e):
+    return jsonify({'error': 'File too large (16MB max)'}), 413
 
 
 @app.route('/')
