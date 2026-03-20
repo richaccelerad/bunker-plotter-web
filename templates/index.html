@@ -315,8 +315,11 @@
                 matchedHtml = `<div style="color: #ff4d4f; margin-top: 5px;">✗ No columns matched! Update config.json to match your CSV columns.</div>`;
             }
 
+            const sampledNote = (data.plotted_rows && data.plotted_rows < data.num_rows)
+                ? ` (downsampled to ${data.plotted_rows.toLocaleString()} for plotting)`
+                : '';
             plotInfo.innerHTML = `
-                <strong>✅ Success!</strong> Processed ${data.num_rows} rows with ${data.columns.length} columns.
+                <strong>✅ Success!</strong> Processed ${data.num_rows.toLocaleString()} rows with ${data.columns.length} columns${sampledNote}.
                 ${matchedHtml}
                 ${warningHtml}
                 <details style="margin-top: 10px;">

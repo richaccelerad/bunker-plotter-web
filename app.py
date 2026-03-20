@@ -385,6 +385,13 @@ def upload_file():
         # Load and parse CSV
         df = load_and_parse_csv(filepath)
 
+        # Downsample if too many rows to avoid memory issues
+        MAX_ROWS = 10000
+        original_rows = len(df)
+        if len(df) > MAX_ROWS:
+            step = len(df) // MAX_ROWS
+            df = df.iloc[::step]
+
         # Load config
         config = load_config()
         plot_config = config.get('plots', [])
@@ -406,7 +413,8 @@ def upload_file():
         return jsonify({
             'success': True,
             'plot_url': '/plot',
-            'num_rows': len(df),
+            'num_rows': original_rows,
+            'plotted_rows': len(df),
             'columns': list(df.columns),
             'matched_columns': matched_cols,
             'missing_columns': missing_cols
