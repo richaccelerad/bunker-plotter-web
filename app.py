@@ -46,12 +46,12 @@ def load_and_parse_csv(filepath):
     header_cols = [c.strip() for c in header_line.rstrip('\n').split(',') if c.strip()]
     num_cols = len(header_cols)
 
-    # Read only the expected number of columns (ignores trailing commas/comments)
+    # Read data columns + optional comment column (appended after normal columns)
     df = pd.read_csv(
         filepath,
         encoding='latin-1',
-        usecols=range(num_cols),
-        names=header_cols,
+        usecols=range(num_cols + 1),
+        names=header_cols + ['comment'],
         skiprows=1,
         dtype={'Date': str, 'Time': str}
     )
@@ -141,22 +141,85 @@ def find_on_periods(df):
 def create_plotly_figure(df, plot_config):
     """Create interactive Plotly figure with subplots.
 
-    Returns (fig, matched_cols, missing_cols)
+    Returns (fig, matched_cols, missing_cols, comments_list)
+    comments_list is a list of (datetime, text) tuples for rows with comments.
     """
+    # Extract comments
+    comments_list = []
+    if 'comment' in df.columns:
+        mask = df['comment'].notna() & (df['comment'].astype(str).str.strip() != '') & (df['comment'].astype(str) != 'nan')
+        comment_rows = df[mask]
+        comments_list = list(zip(comment_rows.index.tolist(), comment_rows['comment'].tolist()))
+
+    has_comments = len(comments_list) > 0
     num_plots = len(plot_config)
     matched_cols = []
     missing_cols = []
 
-    # Create subplots with secondary y-axes
-    specs = [[{"secondary_y": True}] for _ in range(num_plots)]
+    # Comment row is row 1 (thin); data plots follow
+    comment_row_offset = 1 if has_comments else 0
+    num_rows = num_plots + comment_row_offset
+
+    specs = []
+    if has_comments:
+        specs.append([{"secondary_y": False}])
+    specs.extend([[{"secondary_y": True}] for _ in range(num_plots)])
+
+    if has_comments:
+        # Comment row gets roughly half the height of a data row
+        total_units = 0.5 + num_plots
+        row_heights = [0.5 / total_units] + [1.0 / total_units] * num_plots
+    else:
+        row_heights = None
 
     fig = make_subplots(
-        rows=num_plots,
+        rows=num_rows,
         cols=1,
         specs=specs,
         shared_xaxes=True,
         vertical_spacing=0.02,
+        row_heights=row_heights,
     )
+
+    # Add comment markers in the thin top row
+    if has_comments:
+        times = [t for t, _ in comments_list]
+        texts = [txt for _, txt in comments_list]
+        numbers = [str(n) for n in range(1, len(comments_list) + 1)]
+        fig.add_trace(
+            go.Scatter(
+                x=times,
+                y=[1] * len(times),
+                mode='markers+text',
+                text=numbers,
+                textposition='middle center',
+                marker=dict(
+                    symbol='circle',
+                    size=20,
+                    color='#f5a623',
+                    line=dict(color='#c47d0e', width=1.5),
+                ),
+                textfont=dict(size=10, color='black', family='Arial Black'),
+                customdata=texts,
+                hovertemplate='%{customdata}<extra></extra>',
+                name='Comments',
+                showlegend=False,
+            ),
+            row=1,
+            col=1,
+        )
+        fig.update_yaxes(
+            row=1, col=1,
+            showticklabels=False,
+            showgrid=False,
+            zeroline=False,
+            range=[0, 2],
+            fixedrange=True,
+        )
+        fig.update_xaxes(
+            row=1, col=1,
+            showticklabels=False,
+        )
 
     # Find "on" periods and add background shading using paper coordinates
     on_periods = find_on_periods(df)
@@ -181,6 +244,7 @@ def create_plotly_figure(df, plot_config):
               '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
     
     for i, subplot_config in enumerate(plot_config, start=1):
+        row = i + comment_row_offset
         # Normalize config to dict format
         if isinstance(subplot_config, dict):
             left_cols = subplot_config.get("left", [])
@@ -191,12 +255,8 @@ def create_plotly_figure(df, plot_config):
             right_cols = []
 
         color_idx = 0
-        left_colors = []  # Track colors for left axis
-        right_colors = []  # Track colors for right axis
-
-        # Count valid columns for each axis
-        valid_left = [c for c in left_cols if parse_column(c)[0] in df.columns]
-        valid_right = [c for c in right_cols if parse_column(c)[0] in df.columns]
+        left_colors = []
+        right_colors = []
 
         # Plot left axis columns
         for col_spec in left_cols:
@@ -209,9 +269,7 @@ def create_plotly_figure(df, plot_config):
                 data = -df[col] if invert else df[col]
                 trace_color = colors[color_idx % len(colors)]
                 left_colors.append(trace_color)
-                # Use legend, legend2, legend3, etc. for each subplot
                 legend_name = "legend" if i == 1 else f"legend{i}"
-                # Add (L) or (R) to legend name
                 legend_display = f"{display_name} (L)"
                 fig.add_trace(
                     go.Scatter(
@@ -224,7 +282,7 @@ def create_plotly_figure(df, plot_config):
                         legendgroup=f"plot{i}",
                         legend=legend_name,
                     ),
-                    row=i,
+                    row=row,
                     col=1,
                     secondary_y=False
                 )
@@ -254,7 +312,7 @@ def create_plotly_figure(df, plot_config):
                         legendgroup=f"plot{i}",
                         legend=legend_name,
                     ),
-                    row=i,
+                    row=row,
                     col=1,
                     secondary_y=True
                 )
@@ -264,7 +322,6 @@ def create_plotly_figure(df, plot_config):
         left_labels = [parse_column(c)[2] for c in left_cols if parse_column(c)[0] in df.columns]
         right_labels = [parse_column(c)[2] for c in right_cols if parse_column(c)[0] in df.columns]
 
-        # Determine axis colors (use trace color if only one trace on that axis)
         left_axis_color = left_colors[0] if len(left_colors) == 1 else None
         right_axis_color = right_colors[0] if len(right_colors) == 1 else None
 
@@ -277,7 +334,7 @@ def create_plotly_figure(df, plot_config):
                 )
             fig.update_yaxes(
                 title_text=" / ".join(left_labels),
-                row=i,
+                row=row,
                 col=1,
                 secondary_y=False,
                 showgrid=True,
@@ -297,10 +354,10 @@ def create_plotly_figure(df, plot_config):
                 )
             fig.update_yaxes(
                 title_text=" / ".join(right_labels),
-                row=i,
+                row=row,
                 col=1,
                 secondary_y=True,
-                showgrid=False,  # Only left axis has gridlines
+                showgrid=False,
                 showline=True,
                 linewidth=1,
                 linecolor='black',
@@ -308,29 +365,33 @@ def create_plotly_figure(df, plot_config):
                 **axis_style
             )
 
-        # Add frame (top and bottom lines for x-axis)
         fig.update_xaxes(
-            row=i,
+            row=row,
             col=1,
             showline=True,
             linewidth=1,
             linecolor='black',
-            mirror=True,  # Shows line on opposite side too
+            mirror=True,
         )
-    
-    # Update x-axis label on bottom plot only
-    fig.update_xaxes(title_text="Time", row=num_plots, col=1)
-    
-    # Calculate legend positions for each subplot
-    # Each subplot takes up roughly 1/num_plots of the vertical space
-    plot_height = 1.0 / num_plots
-    legend_configs = {}
 
+    # Update x-axis label on bottom plot only
+    fig.update_xaxes(title_text="Time", row=num_rows, col=1)
+
+    # Legend positions: account for comment row taking up some vertical space
+    if has_comments:
+        # Comment row is ~0.5 units; each data row is 1 unit
+        total_units = 0.5 + num_plots
+        comment_fraction = 0.5 / total_units
+        data_fraction = 1.0 / total_units
+    else:
+        comment_fraction = 0.0
+        data_fraction = 1.0 / num_plots
+
+    legend_configs = {}
     for i in range(1, num_plots + 1):
         legend_name = "legend" if i == 1 else f"legend{i}"
-        # Position legend at the top-right of each subplot
-        # y position: top of subplot (1 - (i-1)*plot_height), slightly inside
-        y_pos = 1 - (i - 1) * plot_height - 0.02
+        # Top of this data subplot in paper coords (0=bottom, 1=top)
+        y_pos = 1.0 - comment_fraction - (i - 1) * data_fraction - 0.02
         legend_configs[legend_name] = dict(
             x=1.02,
             y=y_pos,
@@ -341,15 +402,15 @@ def create_plotly_figure(df, plot_config):
             borderwidth=1,
         )
 
-    # Update layout
+    comment_height = 80 if has_comments else 0
     fig.update_layout(
-        height=250 * num_plots,
+        height=250 * num_plots + comment_height,
         hovermode='x unified',
         template='plotly_white',
         **legend_configs
     )
 
-    return fig, matched_cols, missing_cols
+    return fig, matched_cols, missing_cols, comments_list
 
 
 @app.errorhandler(413)
@@ -397,10 +458,30 @@ def upload_file():
         plot_config = config.get('plots', [])
         
         # Create Plotly figure
-        fig, matched_cols, missing_cols = create_plotly_figure(df, plot_config)
+        fig, matched_cols, missing_cols, comments_list = create_plotly_figure(df, plot_config)
 
-        # Generate full standalone HTML (this works reliably)
+        # Generate full standalone HTML
         plot_html = fig.to_html(full_html=True, include_plotlyjs='cdn')
+
+        # Inject numbered comments list before </body>
+        if comments_list:
+            items_html = '\n'.join(
+                f'<li><span style="background:#f5a623;color:#000;border-radius:50%;'
+                f'display:inline-block;width:22px;height:22px;text-align:center;'
+                f'line-height:22px;font-weight:bold;font-size:11px;margin-right:8px;">'
+                f'{n}</span><span style="font-size:13px;">'
+                f'<b>{ts.strftime("%H:%M:%S")}</b> — {txt}</span></li>'
+                for n, (ts, txt) in enumerate(comments_list, 1)
+            )
+            comments_html = (
+                '<div style="font-family:Arial,sans-serif;max-width:900px;'
+                'margin:12px auto 24px auto;padding:12px 20px;'
+                'background:#fffbf0;border:1px solid #e0c060;border-radius:6px;">'
+                '<h3 style="margin:0 0 10px 0;font-size:14px;color:#6b4c00;">Comments</h3>'
+                f'<ol style="margin:0;padding-left:0;list-style:none;">{items_html}</ol>'
+                '</div>'
+            )
+            plot_html = plot_html.replace('</body>', comments_html + '</body>')
 
         # Save to a temp file that can be served
         plot_file = os.path.join(app.config['UPLOAD_FOLDER'], 'latest_plot.html')
