@@ -8,6 +8,6 @@
         {"left": ["Hz"], "right": ["duty_kly", "duty_gun"]},
         {"left": ["Guide Iip (uA)", "Gun Iip (uA)"], "right": ["Scan Iip (uA)"]},
         {"left": ["Cavity"], "right": ["RefPwr"]},
-        {"left": ["Gun PW (æs)"], "right": ["FWHM (æs)"]}
+        {"left": ["Gun PW (us)"], "right": ["FWHM (us)"]}
     ]
 }
