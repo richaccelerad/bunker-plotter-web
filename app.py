@@ -43,15 +43,49 @@ def load_and_parse_csv(filepath):
     # First, read header to get column count
     with open(filepath, 'r', encoding='latin-1') as f:
         header_line = f.readline()
-    header_cols = [c.strip() for c in header_line.rstrip('\n').split(',') if c.strip()]
+    header_cols = [c.strip() for c in header_line.rstrip('\r\n').split(',') if c.strip()]
+
+    # Newer logger versions include the comment column in the header;
+    # older ones don't, so append it ourselves.
+    if header_cols and header_cols[-1].lower() == 'comment':
+        header_cols[-1] = 'comment'
+    else:
+        header_cols.append('comment')
     num_cols = len(header_cols)
 
-    # Read data columns + optional comment column (appended after normal columns)
+    # Newer logger versions use short header names; map them to the
+    # original names (columns are in the same order in both formats).
+    new_format_names = {
+        'Timestamp': 'Time',
+        'PRF': 'Hz',
+        'GunFilV': 'GunVfil (v)',
+        'GunFilI': 'Gun Ifil (A)',
+        'GunHV': 'GunHV (kV)',
+        'DACSet': 'Dac2',
+        'GunI': 'Icath (A)',
+        'GunPW': 'Gun PW (us)',
+        'GuideVac': 'Guide Iip (uA)',
+        'ScanVac': 'Scan Iip (uA)',
+        'GunVac': 'Gun Iip (uA)',
+        'BeamI': 'BeamCT (A)',
+        'RFPwr': 'RFDriver (W)',
+        'KlyFwhm': 'FWHM (us)',
+        'KlyFwd': 'KLY FWD',
+        'KlyI': 'Ikly (A)',
+        'KlyV': 'Ekly (kV)',
+        'ScanI': 'Scan Amp (A)',
+        'ScanHz': 'Scan F (Hz)',
+        'Reflected': 'RefPwr',
+        'RfDuty': 'RFDuty',
+    }
+    header_cols = [new_format_names.get(c, c) for c in header_cols]
+
+    # Read data columns + comment column
     df = pd.read_csv(
         filepath,
         encoding='latin-1',
-        usecols=range(num_cols + 1),
-        names=header_cols + ['comment'],
+        usecols=range(num_cols),
+        names=header_cols,
         skiprows=1,
         dtype={'Date': str, 'Time': str}
     )
