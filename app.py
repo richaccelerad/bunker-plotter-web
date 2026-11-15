@@ -7,6 +7,7 @@ import json
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from plotly.offline import get_plotlyjs_version
 from flask import Flask, render_template, request, jsonify
 import os
 from werkzeug.utils import secure_filename
@@ -447,6 +448,9 @@ def create_plotly_figure(df, plot_config):
             bgcolor='rgba(255,255,255,0.8)',
             bordercolor='rgba(0,0,0,0.1)',
             borderwidth=1,
+            # Clicking a legend entry toggles only that trace, not every
+            # trace in the subplot's legend group.
+            groupclick='toggleitem',
         )
 
     comment_height = 80 if has_comments else 0
@@ -460,69 +464,9 @@ def create_plotly_figure(df, plot_config):
     return fig, matched_cols, missing_cols, comments_list
 
 
-# JavaScript injected into the generated plot page.
-# - Clicking a legend entry hides/shows that trace; the subplot's y-axes are then
-#   re-autoscaled so the remaining traces fill the plot.
-# - Hidden traces are remembered (per trace name) in localStorage, so channels
-#   that are turned off stay off for the next uploaded file.
-PLOT_POST_SCRIPT = """
-(function() {
-    var gd = document.getElementById('{plot_id}');
-    var KEY = 'bunkerPlotter.hiddenTraces';
-    function loadHidden() {
-        try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch (e) { return []; }
-    }
-    function saveHidden() {
-        var hidden = gd.data.filter(function(t) { return t.visible === 'legendonly'; })
-                            .map(function(t) { return t.name; });
-        try { localStorage.setItem(KEY, JSON.stringify(hidden)); } catch (e) {}
-    }
-    function autorangeY(traceIdxs) {
-        var upd = {};
-        traceIdxs.forEach(function(i) {
-            var ya = (gd.data[i].yaxis || 'y').replace('y', 'yaxis');
-            upd[ya + '.autorange'] = true;
-        });
-        Plotly.relayout(gd, upd);
-    }
-
-    // Restore previously hidden traces.
-    var hidden = loadHidden();
-    var idxs = [];
-    gd.data.forEach(function(t, i) { if (hidden.indexOf(t.name) !== -1) idxs.push(i); });
-    if (idxs.length) {
-        // (the plotly_restyle handler below re-fits the affected axes)
-        Plotly.restyle(gd, {visible: 'legendonly'}, idxs);
-    }
-
-    gd.on('plotly_restyle', function(ev) {
-        if (!ev || !ev[0] || !('visible' in ev[0])) return;
-        saveHidden();
-        // Re-fit every y-axis in the subplots that were touched.
-        var touched = ev[1] || gd.data.map(function(_, i) { return i; });
-        var rows = {};
-        touched.forEach(function(i) { rows[gd.data[i].legendgroup] = true; });
-        var related = [];
-        gd.data.forEach(function(t, i) {
-            // Only data traces have a legendgroup; skip the fixed comment row.
-            if (t.legendgroup && rows[t.legendgroup]) related.push(i);
-        });
-        autorangeY(related);
-    });
-
-    // Tell the parent page how tall we are so it can size the iframe.
-    function reportHeight() {
-        try {
-            if (window.parent !== window) {
-                window.parent.postMessage({bunkerPlotHeight: document.documentElement.scrollHeight}, '*');
-            }
-        } catch (e) {}
-    }
-    reportHeight();
-    window.addEventListener('load', reportHeight);
-    window.addEventListener('resize', reportHeight);
-})();
-"""
+# Script run after the standalone /plot page draws its figure
+# (setupPlotControls lives in static/plot_controls.js).
+PLOT_POST_SCRIPT = "setupPlotControls(document.getElementById('{plot_id}'));"
 
 
 @app.errorhandler(413)
@@ -572,12 +516,14 @@ def upload_file():
         # Create Plotly figure
         fig, matched_cols, missing_cols, comments_list = create_plotly_figure(df, plot_config)
 
-        # Generate full standalone HTML
+        # Standalone full-page version of the plot, served at /plot
         plot_html = fig.to_html(
             full_html=True,
             include_plotlyjs='cdn',
             post_script=PLOT_POST_SCRIPT,
         )
+        plot_html = plot_html.replace(
+            '<head>', '<head><script src="/static/plot_controls.js"></script>', 1)
 
         # Inject numbered comments list before </body>
         if comments_list:
@@ -607,9 +553,17 @@ def upload_file():
         # Clean up uploaded file
         os.remove(filepath)
 
+        # The main page draws the figure itself (no iframe, so no nested
+        # scroll bar); send it the figure and the matching plotly.js version.
         return jsonify({
             'success': True,
             'plot_url': '/plot',
+            'figure': json.loads(fig.to_json()),
+            'plotlyjs_version': get_plotlyjs_version(),
+            'comments': [
+                {'time': ts.strftime('%H:%M:%S'), 'text': str(txt)}
+                for ts, txt in comments_list
+            ],
             'num_rows': original_rows,
             'plotted_rows': len(df),
             'columns': list(df.columns),

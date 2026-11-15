@@ -117,6 +117,45 @@
             border-radius: 4px;
         }
         
+        .comments-box {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 12px auto 24px auto;
+            padding: 12px 20px;
+            background: #fffbf0;
+            border: 1px solid #e0c060;
+            border-radius: 6px;
+        }
+
+        .comments-box h3 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #6b4c00;
+        }
+
+        .comments-box ol {
+            list-style: none;
+            font-size: 13px;
+        }
+
+        .comments-box li {
+            margin: 4px 0;
+        }
+
+        .comment-num {
+            background: #f5a623;
+            color: #000;
+            border-radius: 50%;
+            display: inline-block;
+            width: 22px;
+            height: 22px;
+            text-align: center;
+            line-height: 22px;
+            font-weight: bold;
+            font-size: 11px;
+            margin-right: 8px;
+        }
+
         .error {
             background: #fff2f0;
             border-left: 4px solid #ff4d4f;
@@ -198,7 +237,11 @@
             
             <div class="plot-container" id="plotContainer">
                 <div class="plot-info" id="plotInfo"></div>
-                <iframe id="plotFrame" scrolling="no" style="width: 100%; height: 1200px; border: none; overflow: hidden; display: block;"></iframe>
+                <div id="plotDiv" style="width: 100%;"></div>
+                <div id="commentsBox" class="comments-box" style="display: none;">
+                    <h3>Comments</h3>
+                    <ol id="commentsList"></ol>
+                </div>
             </div>
             
             <div class="instructions">
@@ -214,6 +257,7 @@
         </div>
     </div>
     
+    <script src="{{ url_for('static', filename='plot_controls.js') }}"></script>
     <script>
         const fileInput = document.getElementById('csvFile');
         const fileName = document.getElementById('fileName');
@@ -222,15 +266,42 @@
         const errorMessage = document.getElementById('errorMessage');
         const plotContainer = document.getElementById('plotContainer');
         const plotInfo = document.getElementById('plotInfo');
-        const plotFrame = document.getElementById('plotFrame');
+        const plotDiv = document.getElementById('plotDiv');
+        const commentsBox = document.getElementById('commentsBox');
+        const commentsList = document.getElementById('commentsList');
 
-        // Size the iframe to fit the whole plot page so only the main page
-        // scrolls (avoids a second, nested scroll bar).
-        window.addEventListener('message', function(e) {
-            if (e.source === plotFrame.contentWindow && e.data && e.data.bunkerPlotHeight) {
-                plotFrame.style.height = (e.data.bunkerPlotHeight + 4) + 'px';
+        // Load plotly.js once, matching the version the server's plotly uses.
+        let plotlyLoading = null;
+        function loadPlotly(version) {
+            if (window.Plotly) return Promise.resolve();
+            if (!plotlyLoading) {
+                plotlyLoading = new Promise(function(resolve, reject) {
+                    const s = document.createElement('script');
+                    s.src = 'https://cdn.plot.ly/plotly-' + version + '.min.js';
+                    s.onload = resolve;
+                    s.onerror = function() { plotlyLoading = null; reject(new Error('could not load plotly.js')); };
+                    document.head.appendChild(s);
+                });
             }
-        });
+            return plotlyLoading;
+        }
+
+        function showComments(comments) {
+            commentsList.innerHTML = '';
+            (comments || []).forEach(function(c, i) {
+                const li = document.createElement('li');
+                const num = document.createElement('span');
+                num.className = 'comment-num';
+                num.textContent = i + 1;
+                const time = document.createElement('b');
+                time.textContent = c.time;
+                li.appendChild(num);
+                li.appendChild(time);
+                li.appendChild(document.createTextNode(' — ' + c.text));
+                commentsList.appendChild(li);
+            });
+            commentsBox.style.display = (comments && comments.length) ? 'block' : 'none';
+        }
         
         // File selection handler
         fileInput.addEventListener('change', function(e) {
@@ -338,9 +409,16 @@
                 </details>
             `;
 
-            // Show container and load plot in iframe
+            // Show container and draw the plot directly in the page
             plotContainer.style.display = 'block';
-            plotFrame.src = data.plot_url + '?t=' + Date.now();
+            showComments(data.comments);
+            loadPlotly(data.plotlyjs_version)
+                .then(function() {
+                    Plotly.purge(plotDiv);
+                    return Plotly.newPlot(plotDiv, data.figure.data, data.figure.layout, {responsive: true});
+                })
+                .then(function() { setupPlotControls(plotDiv); })
+                .catch(function(err) { showError('Could not draw plot: ' + err.message); });
         }
     </script>
 </body>
