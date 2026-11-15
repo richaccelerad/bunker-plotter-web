@@ -276,9 +276,9 @@ def create_plotly_figure(df, plot_config):
     
     # Shared x values. Passing numpy arrays (not Python lists) lets plotly skip
     # an expensive deep copy of every point and base64-encode the data in the HTML.
-    # Times are sent as epoch milliseconds (compact binary) rather than long
-    # ISO strings repeated for every trace; the x-axes are forced to 'date' type.
-    x_values = (df.index.asi8 // 1_000_000).astype('float64')
+    # Times are sent as short wall-clock strings. (Epoch-millisecond numbers are
+    # smaller, but plotly.js shifts them into the viewer's local time zone.)
+    x_values = df.index.strftime('%Y-%m-%d %H:%M:%S').to_numpy()
 
     # Color palette
     colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', 
