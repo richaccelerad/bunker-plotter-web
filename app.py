@@ -273,6 +273,12 @@ def create_plotly_figure(df, plot_config):
         ))
     fig.update_layout(shapes=shapes)
     
+    # Shared x values. Passing numpy arrays (not Python lists) lets plotly skip
+    # an expensive deep copy of every point and base64-encode the data in the HTML.
+    # Times are sent as epoch milliseconds (compact binary) rather than long
+    # ISO strings repeated for every trace; the x-axes are forced to 'date' type.
+    x_values = (df.index.asi8 // 1_000_000).astype('float64')
+
     # Color palette
     colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', 
               '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
@@ -283,10 +289,13 @@ def create_plotly_figure(df, plot_config):
         if isinstance(subplot_config, dict):
             left_cols = subplot_config.get("left", [])
             right_cols = subplot_config.get("right", [])
+            log_axes = bool(subplot_config.get("log", False))
         else:
             # Simple list format - all on left axis
             left_cols = subplot_config
             right_cols = []
+            log_axes = False
+        axis_type = dict(type='log') if log_axes else {}
 
         color_idx = 0
         left_colors = []
@@ -306,9 +315,9 @@ def create_plotly_figure(df, plot_config):
                 legend_name = "legend" if i == 1 else f"legend{i}"
                 legend_display = f"{display_name} (L)"
                 fig.add_trace(
-                    go.Scatter(
-                        x=df.index.tolist(),
-                        y=data.tolist(),
+                    go.Scattergl(
+                        x=x_values,
+                        y=data.to_numpy(),
                         name=legend_display,
                         mode='lines+markers',
                         marker=dict(size=3),
@@ -336,9 +345,9 @@ def create_plotly_figure(df, plot_config):
                 legend_name = "legend" if i == 1 else f"legend{i}"
                 legend_display = f"{display_name} (R)"
                 fig.add_trace(
-                    go.Scatter(
-                        x=df.index.tolist(),
-                        y=data.tolist(),
+                    go.Scattergl(
+                        x=x_values,
+                        y=data.to_numpy(),
                         name=legend_display,
                         mode='lines+markers',
                         marker=dict(size=3),
@@ -377,6 +386,7 @@ def create_plotly_figure(df, plot_config):
                 linewidth=1,
                 linecolor='black',
                 mirror=False,
+                **axis_type,
                 **axis_style
             )
         if right_labels:
@@ -396,6 +406,7 @@ def create_plotly_figure(df, plot_config):
                 linewidth=1,
                 linecolor='black',
                 mirror=False,
+                **axis_type,
                 **axis_style
             )
 
@@ -407,6 +418,8 @@ def create_plotly_figure(df, plot_config):
             linecolor='black',
             mirror=True,
         )
+
+    fig.update_xaxes(type='date')
 
     # Update x-axis label on bottom plot only
     fig.update_xaxes(title_text="Time", row=num_rows, col=1)
@@ -445,6 +458,71 @@ def create_plotly_figure(df, plot_config):
     )
 
     return fig, matched_cols, missing_cols, comments_list
+
+
+# JavaScript injected into the generated plot page.
+# - Clicking a legend entry hides/shows that trace; the subplot's y-axes are then
+#   re-autoscaled so the remaining traces fill the plot.
+# - Hidden traces are remembered (per trace name) in localStorage, so channels
+#   that are turned off stay off for the next uploaded file.
+PLOT_POST_SCRIPT = """
+(function() {
+    var gd = document.getElementById('{plot_id}');
+    var KEY = 'bunkerPlotter.hiddenTraces';
+    function loadHidden() {
+        try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch (e) { return []; }
+    }
+    function saveHidden() {
+        var hidden = gd.data.filter(function(t) { return t.visible === 'legendonly'; })
+                            .map(function(t) { return t.name; });
+        try { localStorage.setItem(KEY, JSON.stringify(hidden)); } catch (e) {}
+    }
+    function autorangeY(traceIdxs) {
+        var upd = {};
+        traceIdxs.forEach(function(i) {
+            var ya = (gd.data[i].yaxis || 'y').replace('y', 'yaxis');
+            upd[ya + '.autorange'] = true;
+        });
+        Plotly.relayout(gd, upd);
+    }
+
+    // Restore previously hidden traces.
+    var hidden = loadHidden();
+    var idxs = [];
+    gd.data.forEach(function(t, i) { if (hidden.indexOf(t.name) !== -1) idxs.push(i); });
+    if (idxs.length) {
+        // (the plotly_restyle handler below re-fits the affected axes)
+        Plotly.restyle(gd, {visible: 'legendonly'}, idxs);
+    }
+
+    gd.on('plotly_restyle', function(ev) {
+        if (!ev || !ev[0] || !('visible' in ev[0])) return;
+        saveHidden();
+        // Re-fit every y-axis in the subplots that were touched.
+        var touched = ev[1] || gd.data.map(function(_, i) { return i; });
+        var rows = {};
+        touched.forEach(function(i) { rows[gd.data[i].legendgroup] = true; });
+        var related = [];
+        gd.data.forEach(function(t, i) {
+            // Only data traces have a legendgroup; skip the fixed comment row.
+            if (t.legendgroup && rows[t.legendgroup]) related.push(i);
+        });
+        autorangeY(related);
+    });
+
+    // Tell the parent page how tall we are so it can size the iframe.
+    function reportHeight() {
+        try {
+            if (window.parent !== window) {
+                window.parent.postMessage({bunkerPlotHeight: document.documentElement.scrollHeight}, '*');
+            }
+        } catch (e) {}
+    }
+    reportHeight();
+    window.addEventListener('load', reportHeight);
+    window.addEventListener('resize', reportHeight);
+})();
+"""
 
 
 @app.errorhandler(413)
@@ -495,7 +573,11 @@ def upload_file():
         fig, matched_cols, missing_cols, comments_list = create_plotly_figure(df, plot_config)
 
         # Generate full standalone HTML
-        plot_html = fig.to_html(full_html=True, include_plotlyjs='cdn')
+        plot_html = fig.to_html(
+            full_html=True,
+            include_plotlyjs='cdn',
+            post_script=PLOT_POST_SCRIPT,
+        )
 
         # Inject numbered comments list before </body>
         if comments_list:

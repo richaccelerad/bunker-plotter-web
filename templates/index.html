@@ -198,7 +198,7 @@
             
             <div class="plot-container" id="plotContainer">
                 <div class="plot-info" id="plotInfo"></div>
-                <iframe id="plotFrame" style="width: 100%; height: 1200px; border: none;"></iframe>
+                <iframe id="plotFrame" scrolling="no" style="width: 100%; height: 1200px; border: none; overflow: hidden; display: block;"></iframe>
             </div>
             
             <div class="instructions">
@@ -223,6 +223,14 @@
         const plotContainer = document.getElementById('plotContainer');
         const plotInfo = document.getElementById('plotInfo');
         const plotFrame = document.getElementById('plotFrame');
+
+        // Size the iframe to fit the whole plot page so only the main page
+        // scrolls (avoids a second, nested scroll bar).
+        window.addEventListener('message', function(e) {
+            if (e.source === plotFrame.contentWindow && e.data && e.data.bunkerPlotHeight) {
+                plotFrame.style.height = (e.data.bunkerPlotHeight + 4) + 'px';
+            }
+        });
         
         // File selection handler
         fileInput.addEventListener('change', function(e) {
