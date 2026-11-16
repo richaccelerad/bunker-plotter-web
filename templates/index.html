@@ -187,6 +187,89 @@
             100% { transform: rotate(360deg); }
         }
         
+        .button-row {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .analyze-label {
+            background: linear-gradient(135deg, #11998e 0%, #2b8a6e 100%);
+            box-shadow: 0 4px 15px rgba(17, 153, 142, 0.4);
+        }
+
+        .drop-hint {
+            margin-top: 10px;
+            font-size: 0.85em;
+            color: #8a94a6;
+        }
+
+        .analysis-panel {
+            display: none;
+            background: #f4fbf9;
+            border: 1px solid #b7e4d8;
+            border-radius: 12px;
+            padding: 20px 24px;
+            margin-bottom: 30px;
+        }
+
+        .analysis-panel h3 { margin-bottom: 8px; color: #1d5c4f; }
+        .analysis-files { font-size: 0.9em; color: #4a5568; margin-bottom: 14px; }
+
+        .options-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
+        }
+
+        .options-grid fieldset {
+            border: 1px solid #cfe7e0;
+            border-radius: 8px;
+            padding: 10px 14px;
+            background: white;
+        }
+
+        .options-grid legend { font-weight: 600; font-size: 0.9em; color: #1d5c4f; padding: 0 4px; }
+        .opt-row { display: block; margin: 6px 0; font-size: 0.9em; }
+        .opt-row input[type="number"], .match-table input[type="number"] { width: 70px; padding: 2px 4px; }
+        .match-table { font-size: 0.88em; border-collapse: collapse; }
+        .match-table td { padding: 2px 6px; }
+
+        .run-button {
+            margin-top: 16px;
+            padding: 10px 28px;
+            font-size: 1em;
+            font-weight: 600;
+            color: white;
+            background: linear-gradient(135deg, #11998e 0%, #2b8a6e 100%);
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        .report h2 { font-size: 1.25em; margin: 28px 0 10px; color: #2d3748; }
+        .report .hint { font-size: 0.85em; color: #718096; margin-bottom: 8px; }
+        .summary-list { list-style: none; }
+        .summary-list li { padding: 8px 12px; margin: 6px 0; border-radius: 6px; border-left: 4px solid; }
+        .tone-good { background: #effaf3; border-color: #2f9e57 !important; }
+        .tone-bad { background: #fff1f0; border-color: #d64545 !important; }
+        .tone-warn { background: #fff8e6; border-color: #e0a10b !important; }
+        .tone-neutral { background: #f4f6f8; border-color: #a0aec0 !important; }
+        .report-table-wrap { overflow-x: auto; }
+        .report table.data { border-collapse: collapse; font-size: 0.88em; margin-bottom: 12px; min-width: 100%; }
+        .report table.data th, .report table.data td { border: 1px solid #e2e8f0; padding: 5px 8px; text-align: left; vertical-align: top; }
+        .report table.data th { background: #f7f9fc; }
+        .report .sub { display: block; font-size: 0.85em; color: #718096; }
+        .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 0.85em; font-weight: 600; }
+        .badge-better, .badge-further, .badge-ok { background: #d6f5e0; color: #1e6b3a; }
+        .badge-worse, .badge-less, .badge-trouble { background: #fde0de; color: #9b2c2c; }
+        .badge-warning { background: #fff0c2; color: #7a5300; }
+        .badge-flat, .badge-same { background: #e8ecf1; color: #4a5568; }
+        .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+        .chart-block { margin: 18px 0 28px; }
+        .chart-block h3 { font-size: 1em; margin-bottom: 2px; }
+
         .instructions {
             background: #fffbeb;
             border-left: 4px solid #fbbf24;
@@ -214,18 +297,52 @@
     <div class="container">
         <div class="header">
             <h1>📊 Bunker CSV Plotter</h1>
-            <p>Upload your CSV file to generate interactive plots</p>
+            <p>Plot a log file, or analyze several to see if processing is making progress</p>
         </div>
-        
+
         <div class="content">
             <div class="upload-section" id="uploadSection">
-                <div class="file-input-wrapper">
-                    <input type="file" id="csvFile" accept=".csv" />
-                    <label for="csvFile" class="file-input-label">
-                        📁 Choose CSV File
-                    </label>
+                <div class="button-row">
+                    <div class="file-input-wrapper">
+                        <input type="file" id="csvFile" accept=".csv" />
+                        <label for="csvFile" class="file-input-label">
+                            📈 Plot File
+                        </label>
+                    </div>
+                    <div class="file-input-wrapper">
+                        <input type="file" id="analyzeFiles" accept=".csv" multiple />
+                        <label for="analyzeFiles" class="file-input-label analyze-label">
+                            🔬 Analyze Processing
+                        </label>
+                    </div>
                 </div>
                 <div class="file-name" id="fileName"></div>
+                <div class="drop-hint">or drop files here: one file plots it, several files analyze them</div>
+            </div>
+
+            <div class="analysis-panel" id="analysisPanel">
+                <h3>Analyze processing</h3>
+                <div class="analysis-files" id="analysisFiles"></div>
+                <div class="options-grid">
+                    <fieldset>
+                        <legend>Gas readings (ion pump current)</legend>
+                        <div id="optGas"></div>
+                    </fieldset>
+                    <fieldset>
+                        <legend>Beam and timing</legend>
+                        <label class="opt-row">Beam on when Icath &gt;
+                            <input type="number" id="optThreshold" step="0.01" min="0"> A</label>
+                        <label class="opt-row">Transient gas read
+                            <input type="number" id="optTransient" step="5" min="1"> s after snap-on / step</label>
+                        <label class="opt-row">Your gas limit (optional)
+                            <input type="number" id="optGasLimit" step="any" min="0" placeholder="e.g. 30"> µA</label>
+                    </fieldset>
+                    <fieldset>
+                        <legend>Settings that must match to compare gas</legend>
+                        <table class="match-table" id="optMatch"></table>
+                    </fieldset>
+                </div>
+                <button type="button" class="run-button" id="runAnalysis">Run analysis</button>
             </div>
             
             <div class="error" id="errorMessage"></div>
@@ -243,21 +360,22 @@
                     <ol id="commentsList"></ol>
                 </div>
             </div>
-            
+
+            <div class="results-container" id="analysisReport"></div>
+
             <div class="instructions">
                 <h3>📝 Instructions</h3>
                 <ul>
-                    <li>Upload a CSV file with Date and Time columns</li>
-                    <li>The plotter will automatically generate interactive plots based on the config.json file</li>
-                    <li>Hover over the plots to see values</li>
-                    <li>Click and drag to zoom into specific regions</li>
-                    <li>Double-click to reset the view</li>
+                    <li><b>Plot File:</b> plots one log using the layout in config.json. Hover for values, drag to zoom, double-click to reset, click legend entries to hide traces.</li>
+                    <li><b>Analyze Processing:</b> pick several logs (each one is a session). It compares gas at matching settings, how far duty, beam current and power got at a given gas level, and checks cathode current.</li>
                 </ul>
             </div>
         </div>
     </div>
     
     <script src="{{ url_for('static', filename='plot_controls.js') }}"></script>
+    <script>window.ANALYSIS_DEFAULTS = {{ analysis_defaults|tojson }};</script>
+    <script src="{{ url_for('static', filename='analysis.js') }}"></script>
     <script>
         const fileInput = document.getElementById('csvFile');
         const fileName = document.getElementById('fileName');
@@ -303,12 +421,21 @@
             commentsBox.style.display = (comments && comments.length) ? 'block' : 'none';
         }
         
-        // File selection handler
+        // File selection handlers
         fileInput.addEventListener('change', function(e) {
             if (this.files.length > 0) {
                 const file = this.files[0];
                 fileName.textContent = `Selected: ${file.name}`;
                 uploadFile(file);
+                this.value = '';  // allow re-selecting the same file
+            }
+        });
+
+        document.getElementById('analyzeFiles').addEventListener('change', function() {
+            if (this.files.length > 0) {
+                fileName.textContent = '';
+                BunkerAnalysis.chooseFiles(Array.from(this.files));
+                this.value = '';
             }
         });
         
@@ -327,21 +454,24 @@
             e.preventDefault();
             uploadSection.classList.remove('dragover');
             
-            const file = e.dataTransfer.files[0];
-            if (file && file.name.endsWith('.csv')) {
-                fileInput.files = e.dataTransfer.files;
-                fileName.textContent = `Selected: ${file.name}`;
-                uploadFile(file);
+            const files = Array.from(e.dataTransfer.files).filter(f => f.name.toLowerCase().endsWith('.csv'));
+            if (files.length === 1) {
+                fileName.textContent = `Selected: ${files[0].name}`;
+                uploadFile(files[0]);
+            } else if (files.length > 1) {
+                fileName.textContent = '';
+                BunkerAnalysis.chooseFiles(files);
             } else {
-                showError('Please drop a CSV file');
+                showError('Please drop CSV files');
             }
         });
-        
+
         // Upload file function
         function uploadFile(file) {
             // Hide previous results and errors
             errorMessage.style.display = 'none';
             plotContainer.style.display = 'none';
+            BunkerAnalysis.hide();
             loading.style.display = 'block';
             
             const formData = new FormData();

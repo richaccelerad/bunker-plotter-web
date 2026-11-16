@@ -3,7 +3,9 @@ Bunker CSV Plotter - Web Application
 Uses Plotly for interactive plotting
 """
 
+import io
 import json
+import re
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -12,9 +14,11 @@ from flask import Flask, render_template, request, jsonify
 import os
 from werkzeug.utils import secure_filename
 
+import analysis
+
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max upload (all files together)
 
 # Create uploads directory if it doesn't exist
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -39,11 +43,33 @@ def load_config(config_path='config.json'):
     return DEFAULT_CONFIG
 
 
-def load_and_parse_csv(filepath):
-    """Load CSV and parse Date/Time into datetime index."""
-    # First, read header to get column count
-    with open(filepath, 'r', encoding='latin-1') as f:
-        header_line = f.readline()
+# Header written by the newer logger. Used when a file has no header line.
+NEW_FORMAT_HEADER = (
+    'Date,Timestamp,PRF,GunFilV,GunFilI,GunHV,DACSet,GunI,GunPW,GuideVac,ScanVac,'
+    'GunVac,BeamI,RFPwr,CCPS,KlyFwhm,KlyFwd,KlyI,KlyV,ScanI,ScanHz,Cavity,'
+    'Reflected,RfDuty,Comment'
+)
+
+
+def load_and_parse_csv(source):
+    """Load CSV and parse Date/Time into datetime index.
+
+    `source` is a file path or a binary file-like object (e.g. an upload).
+    """
+    if hasattr(source, 'read'):
+        text = source.read()
+        if isinstance(text, bytes):
+            text = text.decode('latin-1')
+    else:
+        with open(source, 'r', encoding='latin-1') as f:
+            text = f.read()
+
+    header_line = text.split('\n', 1)[0]
+    # Some files have no header line (they start straight with data);
+    # those come from the newer logger, so use its header.
+    has_header = not re.match(r'\s*\d{1,2}/\d{1,2}/\d{4}\s*,', header_line)
+    if not has_header:
+        header_line = NEW_FORMAT_HEADER
     header_cols = [c.strip() for c in header_line.rstrip('\r\n').split(',') if c.strip()]
 
     # Newer logger versions include the comment column in the header;
@@ -83,11 +109,10 @@ def load_and_parse_csv(filepath):
 
     # Read data columns + comment column
     df = pd.read_csv(
-        filepath,
-        encoding='latin-1',
+        io.StringIO(text),
         usecols=range(num_cols),
         names=header_cols,
-        skiprows=1,
+        skiprows=1 if has_header else 0,
         dtype={'Date': str, 'Time': str}
     )
 
@@ -471,13 +496,13 @@ PLOT_POST_SCRIPT = "setupPlotControls(document.getElementById('{plot_id}'));"
 
 @app.errorhandler(413)
 def too_large(e):
-    return jsonify({'error': 'File too large (16MB max)'}), 413
+    return jsonify({'error': 'Upload too large (100MB max in total)'}), 413
 
 
 @app.route('/')
 def index():
     """Render the upload page."""
-    return render_template('index.html')
+    return render_template('index.html', analysis_defaults=analysis.DEFAULT_OPTIONS)
 
 
 @app.route('/upload', methods=['POST'])
@@ -573,6 +598,47 @@ def upload_file():
     
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/analyze', methods=['POST'])
+def analyze_files():
+    """Analyze several CSV logs for processing progress (see analysis.py)."""
+    uploads = [f for f in request.files.getlist('files') if f and f.filename]
+    if not uploads:
+        return jsonify({'error': 'No files provided'}), 400
+    try:
+        options = json.loads(request.form.get('options') or '{}')
+    except ValueError:
+        return jsonify({'error': 'Bad analysis options'}), 400
+
+    frames = []
+    skipped = []
+    for f in uploads:
+        name = os.path.splitext(os.path.basename(f.filename))[0]
+        if not f.filename.lower().endswith('.csv'):
+            skipped.append(f'{f.filename} (not a CSV)')
+            continue
+        try:
+            df = load_and_parse_csv(f.stream)
+        except Exception as e:
+            skipped.append(f'{f.filename} ({e})')
+            continue
+        if len(df):
+            frames.append((name, df))
+        else:
+            skipped.append(f'{f.filename} (no readable rows)')
+
+    if not frames:
+        return jsonify({'error': 'None of the files could be read: ' + '; '.join(skipped)}), 400
+    try:
+        result = analysis.analyze(frames, options)
+    except Exception as e:
+        return jsonify({'error': f'Analysis failed: {e}'}), 500
+    if 'error' in result:
+        return jsonify(result), 400
+    result['notes'] = [f'Skipped {s}' for s in skipped] + result['notes']
+    result['plotlyjs_version'] = get_plotlyjs_version()
+    return app.response_class(json.dumps(result, allow_nan=False), mimetype='application/json')
 
 
 @app.route('/plot')
